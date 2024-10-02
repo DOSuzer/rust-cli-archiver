@@ -3,9 +3,11 @@ use std::fs::{File, create_dir_all};
 use std::io::prelude::*;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
-use zip::result;
 use clap::{Parser, Subcommand};
 use std::io;
+use unrar::Archive;
+use sevenz_rust::*;
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -13,7 +15,7 @@ struct Args {
     #[arg(short, long)]
     files: Option<PathBuf>,
 
-    /// Archive name
+    /// Archive name with extension
     #[arg(short, long)]
     name: Option<String>,
 
@@ -23,7 +25,7 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Extract archive to same location
+    /// Extract archive to current location
     Extract {
         /// Path to archive
         #[arg(short, long)]
@@ -37,16 +39,27 @@ fn main() {
     match &args.command {
         Some(Commands::Extract { file }) => {
             let file_result = file.as_deref();
-            let _archive = match file_result {
+            let result = match file_result {
                 Some(archive) => {
                     println!("Archive path: {:?}", archive.to_str());
-                    extract_zip(archive)
+                    match archive.extension().and_then(|ext| ext.to_str()) {
+                        Some("zip") => extract_zip(&archive),
+                        Some("rar") => extract_rar(&archive),
+                        Some("7z") => extract_sevenz(&archive),
+                        Some(_) => panic!("Unknown archive type."),
+                        None => panic!("Couldn't check archive type."),
+                    }
                 },
-                None => panic!("Please provide path to archive."),
+                None => panic!("Please provide path to archive, e.g. --file </path/to>."),
             };
+            if let Err(e) = result {
+                eprintln!("Error extracting archive: {}", e);
+            } else {
+                println!("Archive extracted successfully.");
+            }
         }
         None => {
-            let mut archive_name = String::new();
+            let archive_name: String;
 
             let files_result = args.files.as_deref();
             let files = match files_result {
@@ -66,25 +79,28 @@ fn main() {
                 println!("Using default archive name: {archive_name}");
             }
 
-            match doit(&archive_name, files) {
-                Ok(_) => println!("Done!"),
-                Err(e) => println!("Error: {e:?}"),
+            let path = Path::new(&archive_name);
+
+            let result = match path.extension().and_then(|ext| ext.to_str()) {
+                Some("7z") => create_7z(&archive_name, files),
+                Some(_) => create_zip(&archive_name, files),
+                None => create_zip(&archive_name, files),
+            };
+            if let Err(e) = result {
+                eprintln!("Error creating archive: {}", e);
             }
         }
     }
 }
 
-fn doit(archive_name: &String, file: &Path) -> result::ZipResult<()> {
+fn create_zip(archive_name: &String, file: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let path = Path::new(&archive_name);
-    let mut checked_path = PathBuf::new();
+    let checked_path: PathBuf;
     if path.extension().is_none() || path.extension().unwrap() != "zip" {
         checked_path = path.with_extension("zip");
-        println!("1: {:?}", checked_path)
     } else {
         checked_path = PathBuf::from(path);
-        println!("2: {:?}", checked_path)
     }
-    println!("3: {:?}", checked_path);
 
     let archive = File::create(checked_path).unwrap();
     let mut buffer = Vec::new();
@@ -105,7 +121,12 @@ fn doit(archive_name: &String, file: &Path) -> result::ZipResult<()> {
     Ok(())
 }
 
-fn extract_zip(archive_path: &Path) -> result::ZipResult<()> {
+fn create_7z(archive_name: &String, file: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    sevenz_rust::compress_to_path(&file, &archive_name).expect("compress ok");
+    Ok(())
+}
+
+fn extract_zip(archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let fname = std::path::Path::new(archive_path);
     let file = File::open(fname).unwrap();
 
@@ -154,5 +175,30 @@ fn extract_zip(archive_path: &Path) -> result::ZipResult<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn extract_rar(archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut archive =
+        Archive::new(archive_path)
+            .open_for_processing()
+            .unwrap();
+    while let Some(header) = archive.read_header()? {
+        println!(
+            "{} bytes: {}",
+            header.entry().unpacked_size,
+            header.entry().filename.to_string_lossy(),
+        );
+        archive = if header.entry().is_file() {
+            header.extract()?
+        } else {
+            header.skip()?
+        };
+    }
+    Ok(())
+}
+
+fn extract_sevenz(archive_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    decompress_file(&archive_path, archive_path.parent().unwrap()).expect("complete");
     Ok(())
 }

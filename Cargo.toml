@@ -5,4 +5,6 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.18", features = ["derive"] }
+sevenz-rust = "0.6.1"
+unrar = "0.5.6"
 zip = "2.2.0"
