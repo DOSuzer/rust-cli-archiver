@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
+use file_format::{FileFormat, Kind};
 
 use crate::models::Archive;
 
@@ -52,9 +53,21 @@ fn main() {
                         .unwrap_or_else(|| panic!("Failed to find archive path")))
                         .expect("Failed to create Archive");
                     existing_archive.path = archive_path.to_path_buf();
-                    existing_archive.archive_extension = match archive_path.extension().and_then(|ext| ext.to_str()) {
-                        Some(ext) => ext.to_string(),
-                        None => panic!("Couldn't check archive type."),
+                    match FileFormat::from_file(archive_path) {
+                        Ok(fmt) => {
+                            println!("File extension: {}", fmt.extension());
+                            if fmt.kind() != Kind::Archive || fmt.kind() != Kind::Compressed {
+                                panic!("File type is not a valid archive: {:?}", fmt.kind())
+                            }
+                            existing_archive.archive_extension = fmt.extension().to_string();
+                        },
+                        Err(_) => {
+                            println!("Failed to determin file type, checking file extension...");
+                            existing_archive.archive_extension = match archive_path.extension().and_then(|ext| ext.to_str()) {
+                                Some(ext) => ext.to_string(),
+                                None => panic!("Couldn't check archive type."),
+                            }
+                        },
                     }
                 },
                 None => panic!("Please provide path to archive, e.g. --file </path/to>."),

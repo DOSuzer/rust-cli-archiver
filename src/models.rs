@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use zip::CompressionMethod;
 
 use crate::zip::{extract_zip, create_zip};
 use crate::rar::extract_rar;
@@ -27,7 +28,7 @@ pub struct Archive {
     pub files_names: Vec<String>,
     pub file_name: String,
     pub file_path: PathBuf,
-    pub compression_method: CompressionMethods,
+    pub compression_method: CompressionMethod,
     pub password: String,
     pub content_type: ContentType,
 }
@@ -43,7 +44,7 @@ impl Archive {
             files_names: Vec::new(),
             file_name: String::new(),
             file_path: PathBuf::new(),
-            compression_method: CompressionMethods::Deflated, // Default compression method
+            compression_method: CompressionMethod::Deflated, // Default compression method
             password: String::new(),
             content_type: ContentType::Mixed, // Default content type
         })
@@ -53,10 +54,10 @@ impl Archive {
             "7z" => extract_sevenz(&self.path),
             "zip" => extract_zip(&self.path),
             "rar" => extract_rar(&self.path),
-            _ => panic!("How did you get here?!"),
+            _ => panic!("This archive type is not supported yet. Sorry:("),
         };
         if let Err(e) = result {
-            eprintln!("Error creating archive: {}", e);
+            eprintln!("Error extracting archive: {}", e);
         };
         Ok(())
     }
